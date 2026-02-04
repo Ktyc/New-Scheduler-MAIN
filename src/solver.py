@@ -1,10 +1,8 @@
 from ortools.sat.python import cp_model
 from typing import List, Dict, Set
 from datetime import date
-from .models import Employee, Shift
-from ortools.sat.python import cp_model
+from .models import Employee, Shift, EmployeeType
 import pandas as pd
-
 
 class RosterSolver:
     def __init__(self, employees: List[Employee], date_range: List[date], public_holidays: Set[date]):
@@ -16,114 +14,90 @@ class RosterSolver:
         self.errors = []
 
     def _get_shifts_for_day(self, d: date) -> List[Shift]:
-
+        """Returns the specific shifts available for a given date type."""
         if d in self.public_holidays:
-            return [Shift.PH_AM, Shift.PH_PM]
-        
-        if d.weekday() >= 5: #Saturday / Sunday
-            return [Shift.WEEKEND_AM, Shift.WEEKEND_PM]
+            return [Shift.PH_FULL]
+        if d.weekday() >= 5: # Saturday / Sunday
+            return [Shift.WEEKEND_FULL]
         else:
             return [Shift.WEEKDAY_PM]
 
     def _create_variables(self):
-        
+        """Generates boolean variables for valid Employee-Day-Shift combinations."""
         for d in self.date_range:
             available_shifts = self._get_shifts_for_day(d)
             is_ph = d in self.public_holidays
 
             for s in available_shifts:
                 for emp in self.employees:
-
                     if emp.can_work(d, s, is_public_holiday=is_ph):
                         var_name = f"{emp.name}_{d}_{s.name}"
                         self.variables[(emp.name, d, s)] = self.model.NewBoolVar(var_name)
 
-    def _add_ph_bidding_constraints(self):
-        for d in self.date_range:
-            if d in self.public_holidays:
-                for s in self._get_shifts_for_day(d):
-                    bidders = [emp for emp in self.employees if d in emp.ph_bids]
-                    
-
-                    valid_bidder_vars = [
-                        self.variables[(emp.name, d, s)] 
-                        for emp in bidders 
-                        if (emp.name, d, s) in self.variables
-                    ]
-
-                    if valid_bidder_vars:
-                        self.model.Add(sum(valid_bidder_vars) == 1)
-
     def _add_coverage_constraints(self):
+        """Ensures every shift on every day is filled by exactly one person."""
         for d in self.date_range:
-            available_shifts = self._get_shifts_for_day(d)
-            for s in available_shifts:
-                relevant_switches = []
-                for emp in self.employees:
-                    if (emp.name, d, s) in self.variables:
-                        relevant_switches.append(self.variables[(emp.name, d, s)])
+            for s in self._get_shifts_for_day(d):
+                relevant_vars = [
+                    self.variables[(emp.name, d, s)]
+                    for emp in self.employees
+                    if (emp.name, d, s) in self.variables
+                ]
                 
-                if relevant_switches:
-                    self.model.Add(sum(relevant_switches) == 1)
+                if relevant_vars:
+                    self.model.Add(sum(relevant_vars) == 1)
                 else:
-                    err_msg = f"❌ Impossible to fill: {d.strftime('%Y-%m-%d')} ({s.name}). Reason: Impossible to fill with current restrictions."
+                    err_msg = f"❌ Impossible to fill: {d.strftime('%Y-%m-%d')} ({s.name}). Reason: No eligible employees available."
                     self.errors.append(err_msg)
-                    
-    def _add_one_shift_per_day_constraint(self):
-        for emp in self.employees:
-            for d in self.date_range:
-                # Gather all possible shift variables for this specific employee on this day
-                shifts_today = []
-                for s in self._get_shifts_for_day(d):
-                    if (emp.name, d, s) in self.variables:
-                        shifts_today.append(self.variables[(emp.name, d, s)])
-                
-                # Constraint: The sum of shifts worked today must be 0 or 1
-                if shifts_today:
-                    self.model.Add(sum(shifts_today) <= 1)
 
     def _add_rest_constraints(self):
+        """Mandatory 1-day rest: If an employee works today, they cannot work tomorrow."""
         for emp in self.employees:
             for i in range(len(self.date_range) - 1):
                 today = self.date_range[i]
                 tomorrow = self.date_range[i + 1]
-                pm_shifts = {Shift.WEEKDAY_PM, Shift.WEEKEND_PM, Shift.PH_PM} 
-                today_pm_var = None
-                for s in pm_shifts: 
-                    if (emp.name, today, s) in self.variables: 
-                        today_pm_var = self.variables[(emp.name, today, s)] 
-                        break
-                if today_pm_var is None:
-                    continue
                 
-                tomorrow_switches = []
-                for s_tomorrow in self._get_shifts_for_day(tomorrow): #for every switch in the the day
-                    var = self.variables.get((emp.name, tomorrow, s_tomorrow)) #get the value of the switch 
-                    if var is not None:
-                        tomorrow_switches.append(var) #store the value of the switch in to a list
+                today_vars = [self.variables[emp.name, today, s] 
+                             for s in self._get_shifts_for_day(today)
+                             if (emp.name, today, s) in self.variables]
                 
-                if tomorrow_switches:
-                    self.model.Add(today_pm_var + sum(tomorrow_switches) <= 1) 
+                tomorrow_vars = [self.variables[emp.name, tomorrow, s]
+                                for s in self._get_shifts_for_day(tomorrow)
+                                if (emp.name, tomorrow, s) in self.variables]
+                
+                if today_vars and tomorrow_vars:
+                    # Logic: Sum of (Worked Today + Worked Tomorrow) <= 1
+                    self.model.Add(sum(today_vars) + sum(tomorrow_vars) <= 1)
+
+    def _add_ph_bidding_constraints(self):
+        """Prioritizes employees who bid for specific Public Holidays."""
+        for d in self.date_range:
+            if d in self.public_holidays:
+                for s in self._get_shifts_for_day(d):
+                    bidders = [emp for emp in self.employees if d in emp.ph_bids]
+                    bidder_vars = [self.variables[(emp.name, d, s)] 
+                                  for emp in bidders if (emp.name, d, s) in self.variables]
+
+                    if bidder_vars:
+                        # If there are bidders, one of them MUST get the shift
+                        self.model.Add(sum(bidder_vars) == 1)
 
     def _set_fairness_objective(self):
+        """Minimizes the spread between the highest and lowest total point scores."""
         weights = {
             Shift.WEEKDAY_PM: 10,
-            Shift.WEEKDAY_AM: 10,
-            Shift.WEEKEND_AM: 15,
-            Shift.WEEKEND_PM: 15,
-            Shift.PH_AM: 15, 
-            Shift.PH_PM: 15
+            Shift.WEEKEND_FULL: 15,
+            Shift.PH_FULL: 15
         }
+        
         employee_totals = []
         for emp in self.employees:
             total_points = emp.ytd_points * 10
             for (emp_name, d, s), var in self.variables.items():
                 if emp_name == emp.name:
-                    weight = 15 if d in self.public_holidays else weights.get(s, 10)
-                    total_points += var * weight
+                    total_points += var * weights.get(s, 10)
             employee_totals.append(total_points)
 
-        # 1. Define the Ceiling (Max) and the Floor (Min)
         max_pts = self.model.NewIntVar(0, 100000, "max_pts")
         min_pts = self.model.NewIntVar(0, 100000, "min_pts")
         
@@ -131,9 +105,7 @@ class RosterSolver:
             self.model.Add(max_pts >= total)
             self.model.Add(min_pts <= total)
 
-        
-        self.model.Minimize(max_pts - min_pts) 
-        pass
+        self.model.Minimize(max_pts - min_pts)
 
     def solve(self):
         self._create_variables()
@@ -143,15 +115,12 @@ class RosterSolver:
 
         self._add_rest_constraints()  
         self._add_ph_bidding_constraints()
-        self._add_one_shift_per_day_constraint()
         self._set_fairness_objective()
-        
-
-        
         
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = 10.0
         status = solver.Solve(self.model)
+
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             roster_results = []
             for (emp_name, d, s), var in self.variables.items():
@@ -164,11 +133,7 @@ class RosterSolver:
                     })
             
             summary_results = []
-            weights = {
-                Shift.WEEKDAY_PM: 10, Shift.WEEKDAY_AM: 10,
-                Shift.WEEKEND_AM: 15, Shift.WEEKEND_PM: 15,
-                Shift.PH_AM: 15, Shift.PH_PM: 15
-            }
+            weights = {Shift.WEEKDAY_PM: 10, Shift.WEEKEND_FULL: 15, Shift.PH_FULL: 15}
             for emp in self.employees:
                 new_points = 0
                 for (emp_name, d, s), var in self.variables.items():
@@ -178,10 +143,10 @@ class RosterSolver:
                 summary_results.append({
                     "Employee": emp.name,
                     "Starting Points": emp.ytd_points,
-                    "Points Earned": new_points /10,
-                    "Total Points": emp.ytd_points + new_points /10
+                    "Points Earned": new_points / 10,
+                    "Total Points": emp.ytd_points + (new_points / 10)
                 })
                 
             return pd.DataFrame(roster_results), pd.DataFrame(summary_results), []
-        return None, None, ["⚠️ Logic Conflict: Constraints (Rest Rules or PH Bidding) are too tight to find a fair balance."]
         
+        return None, None, ["⚠️ Logic Conflict: Constraints are too tight to find a fair balance."]
