@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "Bash(venv/Scripts/python.exe:*)",
+      "Bash(PYTHONIOENCODING=utf-8 venv/Scripts/python.exe:*)",
+      "Bash(/c/Users/kayven/Duty-Roster/venv/Scripts/python.exe -m pip:*)"
+    ]
+  }
+}

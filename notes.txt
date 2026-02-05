@@ -1,0 +1,28 @@
+
+
+
+Shift Categories
+-----------------
+- Org duties  : open to all employees. 1 slot per shift type per day.
+- Type C / O duties: Total 10 teams, 4 teams (Black, White, Grey, Red) can do Type O only, 6 (Blue, Yellow, Orange, Green, Purple, Violet) Teams can do Type C only
+
+Org Shift Types & Points
+-------------------------
+Org Weekday PM   – 1 point
+Org Weekend      – 1.5 points
+Org PH           – 2 points
+
+Team Shift Types & Points
+--------------------------
+Type C Weekday PM  – 1 point
+Type C Weekend AM  – 1.5 point
+Type C Weekend PM  – 1.5 point
+Type C PH          – 2 points
+
+Type O Weekday PM  – 1 point
+Type O Weekend AM  – 1.5 point
+Type O Weekend PM  – 1.5 point
+Type O PH          – 2 points
+
+Cannot have the same team doing consecutive shifts for all shifts.
+Assign team to team shifts based on weightage of number of people in the team. 

@@ -1,13 +1,9 @@
 
 import pandas as pd
-from typing import List
+from typing import List, Set
 from .models import Employee, EmployeeType
-from enum import Enum
-from typing import List
-from dataclasses import dataclass, field
-from typing import Dict, Set, Optional, Iterable
-from dateutil import parser # Add this import
-from datetime import date, timedelta, datetime
+from dateutil import parser
+from datetime import date
 
 def load_holidays(filepath: str) -> Set[date]:
     """Reads the Holidays sheet and returns a set of date objects."""
@@ -70,6 +66,11 @@ def load_employees(filepath: str) -> List[Employee]:
             continue
         name = str(name_raw).strip()
 
+        team = str(row.get("Team", "")).strip()
+        if not team:
+            print(f"Warning: No team for {name}. Skipping row {index}.")
+            continue
+
         role_str = str(row.get("Role", "Standard")).strip()
         try:
             role = EmployeeType(role_str)
@@ -91,15 +92,15 @@ def load_employees(filepath: str) -> List[Employee]:
         last_ph = max(last_ph_set) if last_ph_set else None
 
         employees.append(Employee(
-            name=name, 
-            role=role, 
-            ytd_points=ytd, 
+            name=name,
+            team=team,
+            role=role,
+            ytd_points=ytd,
             blackouts=blackouts,
             ph_bids=ph_bids,
             last_ph_date=last_ph
         ))
-        pass
-        
+
     return employees
 
 def update_employee_points(filepath, summary_df):
