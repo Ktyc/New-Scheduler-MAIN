@@ -1,4 +1,4 @@
-#!C:\Users\User\Documents\Duty Roster V3\Duty-Roster\.venv\Scripts\python.exe
+#!c:\users\cj\documents\project\duty roster system\.venv\scripts\python.exe
 
 ##############################################################################
 #

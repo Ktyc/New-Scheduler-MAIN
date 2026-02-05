@@ -66,7 +66,6 @@ class RosterSolver:
                                 if (emp.name, tomorrow, s) in self.variables]
                 
                 if today_vars and tomorrow_vars:
-                    # Logic: Sum of (Worked Today + Worked Tomorrow) <= 1
                     self.model.Add(sum(today_vars) + sum(tomorrow_vars) <= 1)
 
     def _add_ph_bidding_constraints(self):
@@ -79,7 +78,7 @@ class RosterSolver:
                                   for emp in bidders if (emp.name, d, s) in self.variables]
 
                     if bidder_vars:
-                        # If there are bidders, one of them MUST get the shift
+                        # If there are bidders, one of them must get the shift
                         self.model.Add(sum(bidder_vars) == 1)
 
     def _set_fairness_objective(self):
